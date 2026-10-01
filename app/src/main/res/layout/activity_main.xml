@@ -1,0 +1,12 @@
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:background="@color/karen_dark" android:fillViewport="true">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:gravity="center_horizontal" android:padding="24dp">
+        <ImageView android:layout_width="176dp" android:layout_height="176dp" android:src="@drawable/bg_spider" android:contentDescription="Эмблема паука"/>
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="КАРЕН" android:textColor="@color/karen_white" android:textSize="34sp" android:textStyle="bold" android:letterSpacing="0.18"/>
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Ваш голосовой помощник" android:textColor="@color/karen_rose" android:textSize="16sp"/>
+        <TextView android:id="@+id/statusText" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="28dp" android:padding="16dp" android:background="#33FFFFFF" android:textColor="@color/karen_white" android:textSize="15sp" android:text="Настройте разрешения, затем включите панель."/>
+        <Button android:id="@+id/overlayButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="ВКЛЮЧИТЬ ПАНЕЛЬ"/>
+        <Button android:id="@+id/voiceButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="СКАЗАТЬ КАРЕН"/>
+        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:text="Команды: «открой Telegram», «закрой приложение», «громкость 50», «яркость 70», «сколько времени», «сделай скриншот».\n\nДля скриншота и записи Android всегда показывает системное подтверждение — это защита вашей приватности." android:textColor="@color/karen_rose" android:textSize="14sp" android:lineSpacingExtra="5dp"/>
+    </LinearLayout>
+</ScrollView>
