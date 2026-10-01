@@ -8,7 +8,7 @@ import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 
 class AssistantSettings(private val activity: AppCompatActivity, private val tts: TextToSpeech) {
-    private fun field(hintText: String) = EditText(activity).apply { hint = hintText; setTextColor(0xFF501522.toInt()); setHintTextColor(0xFF996D75.toInt()) }
+    private fun field(hintText: String) = EditText(activity).apply { hint = hintText; setTextColor(AssistantMode.textColor(activity)); setHintTextColor(AssistantMode.hintColor(activity)) }
     private fun column() = LinearLayout(activity).apply {
         orientation = LinearLayout.VERTICAL
         val pad = (20 * resources.displayMetrics.density).toInt(); setPadding(pad, pad / 2, pad, pad / 2)
@@ -32,7 +32,7 @@ class AssistantSettings(private val activity: AppCompatActivity, private val tts
         val labels = arrayOf("Открыть приложение", "Громкость (%)", "Яркость (%)", "Главный экран", "Скриншот", "Запись экрана", "Остановить запись", "Назвать время", "Найти в Google Play", "Произнести мой ответ", "Мой аудиоответ")
         type.adapter = ArrayAdapter(activity, android.R.layout.simple_spinner_dropdown_item, labels)
         val target = AutoCompleteTextView(activity).apply {
-            hint = "Название, число или текст ответа"; setTextColor(0xFF501522.toInt()); threshold = 1
+            hint = "Название, число или текст ответа"; setTextColor(AssistantMode.textColor(activity)); threshold = 1
             setAdapter(ArrayAdapter(activity, android.R.layout.simple_dropdown_item_1line, AppCatalog(activity).scan().filter { it.launch != null }.map { it.label }))
         }
         // Existing entries can also be edited as a canonical command.
@@ -83,10 +83,10 @@ class AssistantSettings(private val activity: AppCompatActivity, private val tts
         val rate = SeekBar(activity).apply { max = 60; progress = ((prefs.getFloat("rate", .94f) - .7f) * 100).toInt() }
         val pitch = SeekBar(activity).apply { max = 60; progress = ((prefs.getFloat("pitch", 1.08f) - .8f) * 100).toInt() }
         layout.addView(voices)
-        layout.addView(TextView(activity).apply { text = "Темп речи"; setTextColor(0xFF501522.toInt()) }); layout.addView(rate)
-        layout.addView(TextView(activity).apply { text = "Высота голоса"; setTextColor(0xFF501522.toInt()) }); layout.addView(pitch)
+        layout.addView(TextView(activity).apply { text = "Темп речи"; setTextColor(AssistantMode.textColor(activity)) }); layout.addView(rate)
+        layout.addView(TextView(activity).apply { text = "Высота голоса"; setTextColor(AssistantMode.textColor(activity)) }); layout.addView(pitch)
         fun apply() { prefs.edit().putString("voice", options[voices.selectedItemPosition].name).putFloat("rate", .7f + rate.progress / 100f).putFloat("pitch", .8f + pitch.progress / 100f).apply(); VoiceStyle.apply(activity, tts) }
-        val dialog = AlertDialog.Builder(activity).setTitle("Голос Карен").setView(layout)
+        val dialog = AlertDialog.Builder(activity).setTitle("Голос ${AssistantMode.name(activity)}").setView(layout)
             .setPositiveButton("Сохранить") { _, _ -> apply() }.setNeutralButton("Прослушать", null).setNegativeButton("Назад") { _, _ -> VoiceStyle.apply(activity, tts) }.create()
         dialog.setOnCancelListener { VoiceStyle.apply(activity, tts) }
         dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener {
@@ -99,7 +99,7 @@ class AssistantSettings(private val activity: AppCompatActivity, private val tts
         val apps = AppCatalog(activity).scan()
         val layout = column()
         val search = field("Поиск по всем приложениям")
-        val info = TextView(activity).apply { text = "${apps.size} установлено · ${apps.count { it.launch != null }} запускаются. Обновляется при открытии списка."; setTextColor(0xFF501522.toInt()) }
+        val info = TextView(activity).apply { text = "${apps.size} установлено · ${apps.count { it.launch != null }} запускаются. Обновляется при открытии списка."; setTextColor(AssistantMode.textColor(activity)) }
         val list = ListView(activity)
         var shown = apps
         fun refresh(query: String) {

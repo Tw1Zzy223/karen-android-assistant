@@ -12,7 +12,7 @@ object IntentParser {
 
     fun parse(raw: String): ParsedCommand {
         if (raw.startsWith("ответ:", true)) return ParsedCommand(CommandKind.ANSWER, raw.substringAfter(':').trim())
-        val text = normalize(raw).replace(Regex("\\b(карен|пожалуйста|плиз|мне|пожалуй|ну)\\b"), " ").replace(Regex("\\s+"), " ").trim()
+        val text = normalize(raw).replace(Regex("\\b(карен|karen|джарвис|jarvis|пожалуйста|плиз|мне|пожалуй|ну)\\b"), " ").replace(Regex("\\s+"), " ").trim()
         val words = text.split(" ")
         if (Regex("\\bне\\s+(надо\\s+|нужно\\s+)?(откр|запус|включ|уменьш|увелич|скач|установ|запис|сверн|закр|делай)").containsMatchIn(text)) return ParsedCommand(CommandKind.ANSWER, "Хорошо, действие не выполняю.")
         fun has(vararg stems: String) = words.any { word -> stems.any { word.startsWith(it) } }

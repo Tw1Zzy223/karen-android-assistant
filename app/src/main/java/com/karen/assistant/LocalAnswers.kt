@@ -1,9 +1,9 @@
 package com.karen.assistant
 
 object LocalAnswers {
-    fun answer(raw: String): String? {
+    fun answer(raw: String, name: String = "Карен"): String? {
         val text = IntentParser.normalize(raw)
-        if (text.contains("кто ты") || text.contains("как тебя зовут")) return "Я Карен, твой голосовой помощник для управления телефоном."
+        if (text.contains("кто ты") || text.contains("как тебя зовут")) return "Я $name, твой голосовой помощник для управления телефоном."
         if (text.contains("что умеешь") || text.contains("что ты умеешь")) return "Открываю приложения, меняю громкость и яркость, делаю снимки и записи экрана. Можно добавить свои команды."
         if (text.contains("что такое громкость")) return "Громкость определяет, насколько громко звучит музыка и другие звуки телефона."
         if (text.contains("что такое яркость")) return "Яркость определяет, насколько светлым будет экран. Чем она выше, тем больше расход батареи."

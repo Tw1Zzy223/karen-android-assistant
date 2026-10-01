@@ -11,7 +11,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class CloneVoiceDialog(private val context: Context, private val status: (String) -> Unit, private val pick: () -> Unit, private val gallery: () -> Unit) {
     private val voice = ClonedVoice(context.applicationContext)
     private val main = Handler(Looper.getMainLooper())
-    private fun label(text: String) = TextView(context).apply { this.text = text; setTextColor(0xFF501522.toInt()); setPadding(12, 12, 12, 12) }
+    private fun label(text: String) = TextView(context).apply { this.text = text; setTextColor(AssistantMode.textColor(context)); setPadding(12, 12, 12, 12) }
     fun show() {
         val column = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(20, 8, 20, 12) }
         val state = label("Образец: ${if (voice.reference() != null) "добавлен" else "нет"}\nМодель: ${if (CloneModels.ready(context)) "готова" else "встроена в APK, нужна подготовка"}\nКлонирование: ${if (voice.enabled) "включено" else "выключено"}")
@@ -21,6 +21,13 @@ class CloneVoiceDialog(private val context: Context, private val status: (String
         var downloading = false
         fun button(title: String, click: () -> Unit) { column.addView(Button(context).apply { text = title; setOnClickListener { click() } }) }
         button("ВИДЕО ИЗ ГАЛЕРЕИ") { gallery() }
+        button("ВЕРНУТЬ ГОЛОС ${AssistantMode.name(context)} ИЗ ПРИСЛАННОГО ФАЙЛА") {
+            ClonedVoice.stop()
+            Thread({
+                try { voice.useBundledReference(); main.post { state.text = "Встроенный голос выбран для текущего режима" } }
+                catch (e: Exception) { main.post { state.text = "Не удалось выбрать голос: ${e.message}" } }
+            }, "bundled-reference").start()
+        }
         button("ВИДЕО ИЛИ АУДИО ИЗ ФАЙЛОВ") { pick() }
         button("ПОДГОТОВИТЬ ВСТРОЕННУЮ МОДЕЛЬ") {
             if (downloading || CloneModels.ready(context)) return@button
@@ -37,21 +44,21 @@ class CloneVoiceDialog(private val context: Context, private val status: (String
             voice.enabled = true; state.text = "Карен будет говорить новые ответы голосом из образца"
         }
         button("ПРОСЛУШАТЬ НОВУЮ ФРАЗУ") {
-            voice.speak("Привет! Я Карен. Это новая фраза, созданная на телефоне голосом из вашего образца.") { state.text = it; status(it) }
+            voice.speak(if (AssistantMode.iron(context)) "Сэр, системы готовы. Чем могу помочь?" else "Привет! Я Карен. Чем могу помочь?") { state.text = it; status(it) }
         }
         button("СТОП") { cancelled.set(true); ClonedVoice.stop(); state.text = "Озвучка остановлена. Подготовка остановится на следующем блоке файла" }
         button("ВЕРНУТЬ СИСТЕМНЫЙ ГОЛОС") { voice.enabled = false; ClonedVoice.stop(); state.text = "Клонирование выключено. Образец сохранён" }
         button("УДАЛИТЬ ОБРАЗЕЦ") { voice.clear(); state.text = "Образец удалён, клонирование выключено" }
         val scroll = ScrollView(context).apply { addView(column) }
-        AlertDialog.Builder(context).setTitle("Голос Карен из видео").setView(scroll).setNegativeButton("Закрыть", null).show()
+        AlertDialog.Builder(context).setTitle("Голос ${AssistantMode.name(context)}").setView(scroll).setNegativeButton("Закрыть", null).show()
             .setOnDismissListener { cancelled.set(true); ClonedVoice.stop() }
     }
     fun import(uri: Uri) {
         val column = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(20, 8, 20, 12) }
         column.addView(label("Выберите фрагмент с чистой речью одного человека. Начало — секунды от начала видео; длина — от 3 до 15 секунд. Видео не отправляется на сервер."))
-        val start = EditText(context).apply { hint = "Начало, секунды"; inputType = 2; setText("0"); setTextColor(0xFF501522.toInt()) }
-        val duration = EditText(context).apply { hint = "Длительность, секунды"; inputType = 2; setText("10"); setTextColor(0xFF501522.toInt()) }
-        val consent = CheckBox(context).apply { text = "Это мой голос, либо у меня есть разрешение на его копирование"; setTextColor(0xFF501522.toInt()) }
+        val start = EditText(context).apply { hint = "Начало, секунды"; inputType = 2; setText("0"); setTextColor(AssistantMode.textColor(context)) }
+        val duration = EditText(context).apply { hint = "Длительность, секунды"; inputType = 2; setText("10"); setTextColor(AssistantMode.textColor(context)) }
+        val consent = CheckBox(context).apply { text = "Это мой голос, либо у меня есть разрешение на его копирование"; setTextColor(AssistantMode.textColor(context)) }
         column.addView(start); column.addView(duration); column.addView(consent)
         val dialog = AlertDialog.Builder(context).setTitle("Извлечь образец голоса").setView(column).setPositiveButton("Извлечь", null).setNegativeButton("Отмена", null).create()
         dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {

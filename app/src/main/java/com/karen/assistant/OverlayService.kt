@@ -15,19 +15,27 @@ class OverlayService : Service() {
     private lateinit var button: ImageButton
     private lateinit var voice: VoiceInput
     private var statusToast: Toast? = null
+    private lateinit var notificationBuilder: Notification.Builder
+    private val modeReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            voice.cancel(); button.setImageResource(AssistantMode.icon(this@OverlayService))
+            getSystemService(NotificationManager::class.java).notify(11, notificationBuilder.setContentTitle("${AssistantMode.name(this@OverlayService)} рядом").build())
+        }
+    }
     override fun onCreate() {
         super.onCreate()
         getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("karen", "Карен", NotificationManager.IMPORTANCE_LOW))
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
         val stop = PendingIntent.getService(this, 1, Intent(this, OverlayService::class.java).setAction("stop"), PendingIntent.FLAG_IMMUTABLE)
-        val notification = Notification.Builder(this, "karen").setSmallIcon(android.R.drawable.ic_btn_speak_now)
-            .setContentTitle("Карен рядом").setContentText("Микрофон включается только по касанию")
-            .setContentIntent(open).addAction(android.R.drawable.ic_menu_close_clear_cancel, "Выключить", stop).build()
+        notificationBuilder = Notification.Builder(this, "karen").setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle("${AssistantMode.name(this)} рядом").setContentText("Микрофон включается только по касанию")
+            .setContentIntent(open).addAction(android.R.drawable.ic_menu_close_clear_cancel, "Выключить", stop)
+        val notification = notificationBuilder.build()
         if (android.os.Build.VERSION.SDK_INT >= 30) startForeground(11, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
         else startForeground(11, notification)
         manager = getSystemService(WindowManager::class.java)
         button = ImageButton(this).apply {
-            setImageResource(R.drawable.avatar_spider); setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            setImageResource(AssistantMode.icon(this@OverlayService)); setBackgroundColor(android.graphics.Color.TRANSPARENT)
             setPadding(0, 0, 0, 0); contentDescription = "Карен: включить или выключить микрофон"
             setOnClickListener { voice.toggle() }
             setOnLongClickListener { voice.cancel(); startActivity(Intent(this@OverlayService, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true }
@@ -57,9 +65,10 @@ class OverlayService : Service() {
             }
         }
         manager.addView(button, params)
+        androidx.core.content.ContextCompat.registerReceiver(this, modeReceiver, android.content.IntentFilter("com.karen.assistant.MODE_CHANGED"), androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED)
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int { if (intent?.action == "stop") stopSelf(); return START_NOT_STICKY }
-    override fun onDestroy() { voice.destroy(); statusToast?.cancel(); manager.removeView(button); super.onDestroy() }
+    override fun onDestroy() { unregisterReceiver(modeReceiver); voice.destroy(); statusToast?.cancel(); manager.removeView(button); super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
     private val Int.dp get() = (this * resources.displayMetrics.density).toInt()
 }

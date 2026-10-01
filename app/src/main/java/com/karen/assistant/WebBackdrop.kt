@@ -15,6 +15,12 @@ class WebBackdrop(context: Context, attrs: AttributeSet?) : View(context, attrs)
         val cx = width * 0.5f
         val cy = height * 0.12f
         val radius = height.toFloat()
+        if (AssistantMode.iron(context)) {
+            paint.color = 0x3054DDFF
+            for (ring in 1..12) canvas.drawCircle(cx, cy, ring * width / 5f, paint)
+            for (i in 0..8) canvas.drawLine(i * width / 8f, 0f, i * width / 8f, height.toFloat(), paint)
+            return
+        }
         for (i in 0..15) {
             val angle = i * Math.PI / 8
             canvas.drawLine(cx, cy, cx + cos(angle).toFloat() * radius, cy + sin(angle).toFloat() * radius, paint)

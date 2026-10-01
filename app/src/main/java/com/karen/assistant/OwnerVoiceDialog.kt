@@ -11,7 +11,7 @@ class OwnerVoiceDialog(private val activity: AppCompatActivity) {
         val profile = OwnerVoice(activity)
         val layout = LinearLayout(activity).apply { orientation = LinearLayout.VERTICAL; val p = (20 * resources.displayMetrics.density).toInt(); setPadding(p, p, p, p) }
         val status = TextView(activity).apply {
-            setTextColor(0xFF501522.toInt())
+            setTextColor(AssistantMode.textColor(activity))
             text = if (profile.enabled) "Фильтр голоса включён. Голосовые команды проверяются локально."
                 else "Запишите три образца своим обычным голосом. Потребуется загрузить около 58 МБ моделей Vosk. Голосовой отпечаток хранится на телефоне. Фильтр экспериментальный: возможны ошибки, он не защищает от записи голоса и не заменяет блокировку телефона. Текстовые команды и кнопки остаются доступными."
         }

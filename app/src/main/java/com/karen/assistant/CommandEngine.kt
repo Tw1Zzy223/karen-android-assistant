@@ -41,7 +41,7 @@ class CommandEngine(private val context: Context, private val speak: (String) ->
                 CommandKind.ANSWER -> speak(command.argument)
                 CommandKind.GREETING -> speak("Привет. Я рядом. Скажи, что нужно сделать.")
                 CommandKind.HELP -> speak("Я открываю приложения, меняю громкость и яркость, делаю снимок и запись экрана. Можно задать свою фразу в разделе «Мои команды».")
-                CommandKind.QUESTION -> speak(LocalAnswers.answer(raw) ?: "Без подключённой модели я отвечаю на простые вопросы о времени, дате, батарее и считаю примеры. Для других вопросов можно нажать «Поиск ответа».")
+                CommandKind.QUESTION -> speak(LocalAnswers.answer(raw, if (AssistantMode.iron(context)) "Джарвис" else "Карен") ?: "Без подключённой модели я отвечаю на простые вопросы о времени, дате, батарее и считаю примеры. Для других вопросов можно нажать «Поиск ответа».")
                 CommandKind.UNKNOWN -> speak("Не уверена, что нужно сделать. Например: сделай потише, открой телеграм или скачай приложение из Google Play. Свои фразы можно добавить в «Мои команды».")
             }
         } catch (_: SecurityException) { speak("Для команды нужно разрешение. Откройте настройки Карен") }

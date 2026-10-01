@@ -10,4 +10,12 @@
         <item name="android:statusBarColor">@color/karen_dark</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
+    <style name="Theme.Karen.Iron" parent="Theme.Karen">
+        <item name="colorPrimary">#167B9C</item>
+        <item name="colorSurface">#123F57</item>
+        <item name="colorOnSurface">#E0F8FF</item>
+        <item name="android:colorAccent">#54DDFF</item>
+        <item name="android:navigationBarColor">#071B2C</item>
+        <item name="android:statusBarColor">#071B2C</item>
+    </style>
 </resources>

@@ -1,3 +1,5 @@
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -12,8 +14,8 @@ android {
         applicationId = "com.karen.assistant"
         minSdk = 29
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6.0"
+        versionCode = 7
+        versionName = "0.7.0"
         ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild { cmake {
             targets += "karen_voice"
@@ -33,10 +35,19 @@ android {
 val validateBundledModels by tasks.registering {
     val modelDir = file("src/main/assets/models")
     inputs.files(fileTree(modelDir) { include("*.gguf") })
+    inputs.files(fileTree("src/main/assets/voices") { include("*.wav") })
     doLast {
         check(file("$modelDir/qwen-tokenizer-12hz-Q4_K_M.gguf").length() == 254974752L &&
               file("$modelDir/qwen-talker-0.6b-base-Q4_K_M.gguf").length() == 628905056L) {
             "Bundled voice models missing. Run tools/prepare-models.ps1 before building."
+        }
+        mapOf(
+            "spider.wav" to "a8419f8202d8340f03aec8d31f55aca179dd2b494bb772262e25c4f6697f128a",
+            "iron.wav" to "cb21465d19827fe231a046fee0f24567a3aea8f86d6085ff4862cc52cf8866db"
+        ).forEach { (name, expected) ->
+            val bytes = file("src/main/assets/voices/$name").readBytes()
+            val actual = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+            check(actual == expected) { "Bundled voice reference missing or changed: $name" }
         }
     }
 }

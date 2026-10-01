@@ -36,7 +36,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
     private val audioImport = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
-            val name = EditText(this).apply { hint = "Название голосового ответа"; setTextColor(0xFF501522.toInt()) }
+            val name = EditText(this).apply { hint = "Название голосового ответа"; setTextColor(AssistantMode.textColor(this@MainActivity)) }
             androidx.appcompat.app.AlertDialog.Builder(this).setTitle("Добавить аудиоответ").setView(name)
                 .setPositiveButton("Импортировать") { _, _ ->
                     val label = name.text.toString().trim().ifBlank { "Мой голос" }
@@ -62,6 +62,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         } else status.text = "Захват экрана отменён"
     }
     override fun onCreate(savedInstanceState: Bundle?) {
+        if (AssistantMode.iron(this)) setTheme(R.style.Theme_Karen_Iron)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.root)) { view, insets ->
@@ -69,12 +70,31 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom); insets
         }
         status = findViewById(R.id.statusText)
+        applyMode()
+        AssistantMode.syncLauncher(this)
+        findViewById<Button>(R.id.modeButton).setOnClickListener {
+            androidx.appcompat.app.AlertDialog.Builder(this).setTitle("Assistant mode")
+                .setSingleChoiceItems(arrayOf("Spider Mode — Karen", "Iron Mode — Jarvis"), if (AssistantMode.iron(this)) 1 else 0) { dialog, index ->
+                    if (AssistantMode.iron(this) != (index == 1)) {
+                        voice.cancel(); tts.stop(); AudioAnswers.stop(); ClonedVoice.stop()
+                        AssistantMode.select(this, index == 1)
+                        sendBroadcast(Intent("com.karen.assistant.MODE_CHANGED").setPackage(packageName))
+                        dialog.dismiss(); recreate()
+                    } else dialog.dismiss()
+                }.setNegativeButton("Назад", null).show()
+        }
+        listOf(R.id.controlsToggle to R.id.controlsPanel, R.id.settingsToggle to R.id.settingsPanel).forEach { (button, panel) ->
+            findViewById<Button>(button).setOnClickListener {
+                val view = findViewById<android.view.View>(panel)
+                view.visibility = if (view.visibility == android.view.View.VISIBLE) android.view.View.GONE else android.view.View.VISIBLE
+            }
+        }
         prepareBundledModels()
         tts = TextToSpeech(this, this)
         ContextCompat.registerReceiver(this, silenceReceiver, android.content.IntentFilter(VoiceInput.CLAIM_MIC), ContextCompat.RECEIVER_NOT_EXPORTED)
         voice = VoiceInput(this, { active, message ->
             status.text = message
-            findViewById<Button>(R.id.voiceButton).text = if (active) "■  ВЫКЛЮЧИТЬ МИКРОФОН" else "●  ГОВОРИТЬ С КАРЕН"
+            findViewById<Button>(R.id.voiceButton).text = if (active) "■  ВЫКЛЮЧИТЬ МИКРОФОН" else "●  ГОВОРИТЬ С ${AssistantMode.name(this)}"
         }, ::execute)
         findViewById<Button>(R.id.voiceButton).setOnClickListener { startVoice() }
         findViewById<Button>(R.id.overlayButton).setOnClickListener { toggleOverlay() }
@@ -98,7 +118,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         findViewById<Button>(R.id.voiceStyleButton).setOnClickListener { voice.cancel(); assistantSettings.voices() }
         findViewById<Button>(R.id.scanButton).setOnClickListener { voice.cancel(); assistantSettings.allApps() }
         findViewById<Button>(R.id.playButton).setOnClickListener {
-            val input = EditText(this).apply { hint = "Название приложения"; setTextColor(0xFF501522.toInt()) }
+            val input = EditText(this).apply { hint = "Название приложения"; setTextColor(AssistantMode.textColor(this@MainActivity)) }
             androidx.appcompat.app.AlertDialog.Builder(this).setTitle("Найти в Google Play").setView(input)
                 .setPositiveButton("Найти") { _, _ -> execute("скачай " + input.text.toString()) }.setNegativeButton("Назад", null).show()
         }
@@ -164,10 +184,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         if (customAction?.startsWith("аудио:") == true) {
             tts.stop()
             AudioAnswers(this).play(customAction.substringAfter(':')) { status.text = "Не удалось воспроизвести аудиоответ"; }
-            status.text = "Вы: $text\nКарен: аудиоответ"
+            status.text = "Вы: $text\n${AssistantMode.name(this)}: аудиоответ"
             return
         }
-        CommandEngine(this) { message -> status.text = "Вы: $text\nКарен: $message"; say(message) }.run(text)
+        CommandEngine(this) { message -> status.text = "Вы: $text\n${AssistantMode.name(this)}: $message"; say(message) }.run(text)
     }
     private fun requestCapture(action: String) {
         voice.cancel(); captureAction = action
@@ -193,10 +213,11 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         { galleryVideoImport.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) })
     private fun prepareBundledModels() {
         val info = findViewById<TextView>(R.id.modelStatusText)
-        if (CloneModels.ready(this)) { info.text = "Модель голоса встроена и готова. Интернет не нужен"; return }
         info.text = "Подготавливаю встроенную модель… 0%"
+        val selectedVoice = ClonedVoice(applicationContext)
         Thread({
             try {
+                selectedVoice.useBundledReference(onlyIfNew = true)
                 CloneModels.prepare(applicationContext, modelPreparationCancelled) { percent -> runOnUiThread {
                     if (!isDestroyed) info.text = "Подготавливаю встроенную модель… $percent%"
                 } }
@@ -210,6 +231,26 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         else { ClonedVoice.stop(); tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "karen") }
     }
     override fun onInit(result: Int) { if (result == TextToSpeech.SUCCESS) VoiceStyle.apply(this, tts) }
+    private fun applyMode() {
+        val iron = AssistantMode.iron(this)
+        findViewById<ImageView>(R.id.avatar).setImageResource(AssistantMode.icon(this))
+        findViewById<TextView>(R.id.assistantTitle).text = AssistantMode.name(this)
+        findViewById<Button>(R.id.modeButton).text = if (iron) "Iron Mode  ⇄" else "Spider Mode  ⇄"
+        findViewById<Button>(R.id.voiceButton).text = "●  ГОВОРИТЬ С ${AssistantMode.name(this)}"
+        if (!iron) return
+        findViewById<android.view.View>(R.id.root).setBackgroundColor(0xFF071B2C.toInt())
+        listOf(R.id.conversationCard, R.id.controlsPanel, R.id.settingsPanel).forEach { findViewById<android.view.View>(it).backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF123F57.toInt()) }
+        fun tint(view: android.view.View) {
+            when (view) {
+                is Button -> { view.backgroundTintList = android.content.res.ColorStateList.valueOf(0xFF167B9C.toInt()); view.setTextColor(0xFFFFFFFF.toInt()) }
+                is EditText -> { view.setTextColor(0xFFE0F8FF.toInt()); view.setHintTextColor(0xFF87B4C4.toInt()) }
+                is TextView -> view.setTextColor(0xFFE0F8FF.toInt())
+                is SeekBar -> { view.progressTintList = android.content.res.ColorStateList.valueOf(0xFF54DDFF.toInt()); view.thumbTintList = view.progressTintList }
+            }
+            if (view is android.view.ViewGroup) for (i in 0 until view.childCount) tint(view.getChildAt(i))
+        }
+        tint(findViewById(R.id.root))
+    }
     override fun onPause() { voice.cancel(); super.onPause() }
     override fun onDestroy() { modelPreparationCancelled.set(true); voice.destroy(); unregisterReceiver(silenceReceiver); ClonedVoice.stop(); tts.shutdown(); super.onDestroy() }
     companion object {
