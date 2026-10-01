@@ -2,132 +2,133 @@ package com.karen.assistant
 
 import android.Manifest
 import android.app.Activity
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.hardware.display.DisplayManager
-import android.hardware.display.VirtualDisplay
-import android.media.ImageReader
-import android.media.MediaRecorder
-import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
-import android.os.Handler
-import android.provider.MediaStore
 import android.provider.Settings
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
-import android.view.Surface
-import android.widget.Button
-import android.widget.TextView
-import android.widget.Toast
+import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import java.io.OutputStream
 import java.util.Locale
 
 class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private lateinit var status: TextView
     private lateinit var tts: TextToSpeech
-    private var requestedCapture = ACTION_SCREENSHOT
-    private var projection: MediaProjection? = null
-    private var recorder: MediaRecorder? = null
-    private var virtualDisplay: VirtualDisplay? = null
-
-    private val permissionRequest = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { updateStatus() }
-    private val speechRequest = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val phrase = result.data?.getStringArrayListExtra(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
-        if (phrase == null) say("Я не расслышала") else CommandEngine(this, ::say).run(phrase)
+    private lateinit var voice: VoiceInput
+    private var captureAction = ACTION_SCREENSHOT
+    private var pendingVoice = false
+    private var overlayEnabled = false
+    private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        if (pendingVoice && micGranted()) { pendingVoice = false; startVoice() }
+        else if (pendingVoice) { pendingVoice = false; status.text = "Разрешите микрофон, чтобы говорить с Карен" }
     }
-    private val projectionRequest = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode != Activity.RESULT_OK || result.data == null) { say("Действие отменено"); return@registerForActivityResult }
-        projection = (getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager).getMediaProjection(result.resultCode, result.data!!)
-        if (requestedCapture == ACTION_RECORD) startRecording() else takeScreenshot()
+    private val capture = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (it.resultCode == Activity.RESULT_OK && it.data != null) {
+            ContextCompat.startForegroundService(this, Intent(this, CaptureService::class.java)
+                .setAction(captureAction).putExtra("code", it.resultCode).putExtra("data", it.data))
+            status.text = if (captureAction == ACTION_RECORD) "Запись началась. Остановить можно здесь или в уведомлении" else "Сохраняю скриншот…"
+        } else status.text = "Захват экрана отменён"
     }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.root)) { view, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom); insets
+        }
         status = findViewById(R.id.statusText)
         tts = TextToSpeech(this, this)
-        findViewById<Button>(R.id.overlayButton).setOnClickListener { enableOverlay() }
+        voice = VoiceInput(this, { active, message ->
+            status.text = message
+            findViewById<Button>(R.id.voiceButton).text = if (active) "■  ВЫКЛЮЧИТЬ МИКРОФОН" else "●  ГОВОРИТЬ С КАРЕН"
+        }, ::execute)
         findViewById<Button>(R.id.voiceButton).setOnClickListener { startVoice() }
-        requestBasics()
-        when (intent.action) { ACTION_SCREENSHOT, ACTION_RECORD -> requestCapture(intent.action!!) }
-    }
-
-    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); if (intent.action == ACTION_SCREENSHOT || intent.action == ACTION_RECORD) requestCapture(intent.action!!) }
-
-    private fun requestBasics() {
-        val missing = buildList {
-            if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) add(Manifest.permission.RECORD_AUDIO)
-            if (android.os.Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) add(Manifest.permission.POST_NOTIFICATIONS)
+        findViewById<Button>(R.id.overlayButton).setOnClickListener { toggleOverlay() }
+        findViewById<Button>(R.id.settingsButton).setOnClickListener {
+            startActivity(Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS, android.net.Uri.parse("package:$packageName")))
         }
-        if (missing.isNotEmpty()) permissionRequest.launch(missing.toTypedArray())
-        updateStatus()
+        findViewById<Button>(R.id.sendButton).setOnClickListener {
+            val input = findViewById<EditText>(R.id.commandInput)
+            if (input.text.isNotBlank()) { execute(input.text.toString()); input.text.clear() }
+        }
+        findViewById<Button>(R.id.appsButton).setOnClickListener { chooseApp() }
+        findViewById<Button>(R.id.homeButton).setOnClickListener { execute("сверни приложение") }
+        findViewById<Button>(R.id.timeButton).setOnClickListener { execute("сколько времени") }
+        findViewById<Button>(R.id.shotButton).setOnClickListener { requestCapture(ACTION_SCREENSHOT) }
+        findViewById<Button>(R.id.recordButton).setOnClickListener { requestCapture(ACTION_RECORD) }
+        findViewById<Button>(R.id.stopRecordButton).setOnClickListener { startService(Intent(this, CaptureService::class.java).setAction(CaptureService.STOP)); status.text = "Останавливаю запись" }
+        val audio = getSystemService(android.media.AudioManager::class.java)
+        configureSlider(R.id.volumeSlider, audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) * 100 / audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).coerceAtLeast(1)) { execute("громкость $it") }
+        configureSlider(R.id.brightnessSlider, Settings.System.getInt(contentResolver, Settings.System.SCREEN_BRIGHTNESS, 128) * 100 / 255) { execute("яркость $it") }
+        handleIntent(intent)
     }
-    private fun updateStatus() { status.text = if (Settings.canDrawOverlays(this)) "Панель готова. Нажмите «Включить панель»." else "Разрешите показ поверх других приложений — Android откроет нужный экран." }
-    private fun enableOverlay() {
-        if (!Settings.canDrawOverlays(this)) { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName"))); return }
-        ContextCompat.startForegroundService(this, Intent(this, OverlayService::class.java))
-        status.text = "Карен активна поверх приложений. Перетащите красную кнопку в удобное место."
+    private fun configureSlider(id: Int, initial: Int, apply: (Int) -> Unit) {
+        findViewById<SeekBar>(id).apply {
+            progress = initial
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: SeekBar?, value: Int, user: Boolean) {}
+                override fun onStartTrackingTouch(bar: SeekBar?) {}
+                override fun onStopTrackingTouch(bar: SeekBar) { apply(bar.progress) }
+            })
+        }
+    }
+    private fun chooseApp() {
+        val apps = packageManager.queryIntentActivities(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), 0)
+            .distinctBy { it.activityInfo.packageName }.sortedBy { it.loadLabel(packageManager).toString().lowercase() }
+        androidx.appcompat.app.AlertDialog.Builder(this).setTitle("Открыть приложение").setItems(apps.map { it.loadLabel(packageManager).toString() }.toTypedArray()) { _, index ->
+            val app = apps[index]
+            startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setClassName(app.activityInfo.packageName, app.activityInfo.name))
+        }.setNegativeButton("Назад", null).show()
+    }
+    private fun micGranted() = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+    private fun requestMic() {
+        val items = mutableListOf(Manifest.permission.RECORD_AUDIO)
+        if (android.os.Build.VERSION.SDK_INT >= 33) items.add(Manifest.permission.POST_NOTIFICATIONS)
+        permissions.launch(items.toTypedArray())
     }
     private fun startVoice() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { requestBasics(); return }
-        speechRequest.launch(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU").putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM).putExtra(RecognizerIntent.EXTRA_PROMPT, "Слушаю"))
+        if (!micGranted()) { pendingVoice = true; requestMic(); return }
+        tts.stop()
+        voice.toggle()
+    }
+    private fun toggleOverlay() {
+        if (overlayEnabled) { stopService(Intent(this, OverlayService::class.java)); overlayEnabled = false; findViewById<Button>(R.id.overlayButton).text = "ВКЛЮЧИТЬ ПЛАВАЮЩУЮ КНОПКУ"; return }
+        if (!micGranted()) { requestMic(); status.text = "Разрешите микрофон и нажмите кнопку ещё раз"; return }
+        if (!Settings.canDrawOverlays(this)) { startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, android.net.Uri.parse("package:$packageName"))); status.text = "Включите показ поверх приложений, вернитесь и нажмите кнопку"; return }
+        voice.cancel()
+        ContextCompat.startForegroundService(this, Intent(this, OverlayService::class.java))
+        overlayEnabled = true
+        findViewById<Button>(R.id.overlayButton).text = "ВЫКЛЮЧИТЬ ПЛАВАЮЩУЮ КНОПКУ"
+        status.text = "Кнопка активна: касание — микрофон, удержание — открыть Карен"
+    }
+    private fun execute(text: String) {
+        voice.cancel()
+        status.text = "Вы: $text"
+        CommandEngine(this) { message -> status.text = "Вы: $text\nКарен: $message"; say(message) }.run(text)
     }
     private fun requestCapture(action: String) {
-        requestedCapture = action
-        projectionRequest.launch((getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager).createScreenCaptureIntent())
+        voice.cancel(); captureAction = action
+        capture.launch((getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager).createScreenCaptureIntent())
     }
-    private fun takeScreenshot() {
-        val metrics = resources.displayMetrics
-        val reader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, android.graphics.PixelFormat.RGBA_8888, 2)
-        virtualDisplay = projection!!.createVirtualDisplay("Karen screenshot", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi, DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, reader.surface, null, null)
-        reader.setOnImageAvailableListener({ source ->
-            val image = source.acquireLatestImage() ?: return@setOnImageAvailableListener
-            val width = image.width
-            val height = image.height
-            val plane = image.planes[0]
-            val bitmap = Bitmap.createBitmap(width + (plane.rowStride - plane.pixelStride * width) / plane.pixelStride, height, Bitmap.Config.ARGB_8888)
-            bitmap.copyPixelsFromBuffer(plane.buffer); image.close()
-            saveScreenshot(Bitmap.createBitmap(bitmap, 0, 0, width, height)); bitmap.recycle()
-            source.close(); stopProjection()
-        }, Handler(mainLooper))
-    }
-    private fun saveScreenshot(bitmap: Bitmap) {
-        val values = ContentValues().apply { put(MediaStore.Images.Media.DISPLAY_NAME, "Karen_${System.currentTimeMillis()}.png"); put(MediaStore.Images.Media.MIME_TYPE, "image/png"); put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Karen") }
-        val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
-        uri?.let { contentResolver.openOutputStream(it)?.use { stream -> bitmap.compress(Bitmap.CompressFormat.PNG, 100, stream) } }
-        say("Скриншот сохранён в галерее")
-    }
-    private fun startRecording() {
-        val metrics = resources.displayMetrics
-        val values = ContentValues().apply { put(MediaStore.Video.Media.DISPLAY_NAME, "Karen_${System.currentTimeMillis()}.mp4"); put(MediaStore.Video.Media.MIME_TYPE, "video/mp4"); put(MediaStore.Video.Media.RELATIVE_PATH, "Movies/Karen") }
-        val uri = contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values) ?: return
-        val descriptor = contentResolver.openFileDescriptor(uri, "w") ?: return
-        recorder = MediaRecorder().apply {
-            setVideoSource(MediaRecorder.VideoSource.SURFACE); setOutputFormat(MediaRecorder.OutputFormat.MPEG_4); setOutputFile(descriptor.fileDescriptor)
-            setVideoEncoder(MediaRecorder.VideoEncoder.H264); setVideoSize(metrics.widthPixels, metrics.heightPixels); setVideoFrameRate(30); setVideoEncodingBitRate(6_000_000); prepare()
+    private fun handleIntent(intent: Intent) {
+        when (intent.action) {
+            ACTION_SCREENSHOT, ACTION_RECORD -> requestCapture(intent.action!!)
+            ACTION_COMMAND -> intent.getStringExtra("command")?.let { execute(it) }
         }
-        virtualDisplay = projection!!.createVirtualDisplay("Karen recording", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi, DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, recorder!!.surface, null, null)
-        recorder!!.start()
-        status.text = "Идёт запись экрана. Вернитесь в Карен и нажмите кнопку «Сказать Карен» для остановки."
-        findViewById<Button>(R.id.voiceButton).text = "ОСТАНОВИТЬ ЗАПИСЬ"
-        findViewById<Button>(R.id.voiceButton).setOnClickListener { stopRecording() }
-        say("Запись экрана началась")
+        intent.action = null
     }
-    private fun stopRecording() {
-        try { recorder?.stop() } catch (_: RuntimeException) { Toast.makeText(this, "Запись слишком короткая", Toast.LENGTH_SHORT).show() }
-        recorder?.release(); recorder = null; stopProjection(); findViewById<Button>(R.id.voiceButton).text = "СКАЗАТЬ КАРЕН"; findViewById<Button>(R.id.voiceButton).setOnClickListener { startVoice() }; status.text = "Запись сохранена в Галерее / Movies / Karen"; say("Запись сохранена")
-    }
-    private fun stopProjection() { virtualDisplay?.release(); virtualDisplay = null; projection?.stop(); projection = null }
+    override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); handleIntent(intent) }
     private fun say(text: String) { tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "karen") }
-    override fun onInit(status: Int) { if (status == TextToSpeech.SUCCESS) tts.language = Locale("ru", "RU") }
-    override fun onDestroy() { if (recorder != null) stopRecording(); tts.shutdown(); super.onDestroy() }
-    companion object { const val ACTION_SCREENSHOT = "com.karen.assistant.SCREENSHOT"; const val ACTION_RECORD = "com.karen.assistant.RECORD" }
+    override fun onInit(result: Int) { if (result == TextToSpeech.SUCCESS) { tts.language = Locale("ru", "RU"); tts.setSpeechRate(1.02f) } }
+    override fun onPause() { voice.cancel(); super.onPause() }
+    override fun onDestroy() { voice.destroy(); tts.shutdown(); super.onDestroy() }
+    companion object {
+        const val ACTION_SCREENSHOT = "com.karen.assistant.SCREENSHOT"
+        const val ACTION_RECORD = "com.karen.assistant.RECORD"
+        const val ACTION_COMMAND = "com.karen.assistant.COMMAND"
+    }
 }

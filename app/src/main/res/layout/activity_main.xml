@@ -1,12 +1,37 @@
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:layout_width="match_parent" android:layout_height="match_parent" android:background="@color/karen_dark" android:fillViewport="true">
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:gravity="center_horizontal" android:padding="24dp">
-        <ImageView android:layout_width="176dp" android:layout_height="176dp" android:src="@drawable/bg_spider" android:contentDescription="Эмблема паука"/>
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="КАРЕН" android:textColor="@color/karen_white" android:textSize="34sp" android:textStyle="bold" android:letterSpacing="0.18"/>
-        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:text="Ваш голосовой помощник" android:textColor="@color/karen_rose" android:textSize="16sp"/>
-        <TextView android:id="@+id/statusText" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="28dp" android:padding="16dp" android:background="#33FFFFFF" android:textColor="@color/karen_white" android:textSize="15sp" android:text="Настройте разрешения, затем включите панель."/>
-        <Button android:id="@+id/overlayButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:text="ВКЛЮЧИТЬ ПАНЕЛЬ"/>
-        <Button android:id="@+id/voiceButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="СКАЗАТЬ КАРЕН"/>
-        <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="24dp" android:text="Команды: «открой Telegram», «закрой приложение», «громкость 50», «яркость 70», «сколько времени», «сделай скриншот».\n\nДля скриншота и записи Android всегда показывает системное подтверждение — это защита вашей приватности." android:textColor="@color/karen_rose" android:textSize="14sp" android:lineSpacingExtra="5dp"/>
-    </LinearLayout>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#A80F27">
+<com.karen.assistant.WebBackdrop android:layout_width="match_parent" android:layout_height="match_parent"/>
+<ScrollView android:layout_width="match_parent" android:layout_height="match_parent" android:fillViewport="true">
+<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:gravity="center_horizontal" android:padding="22dp">
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="K A R E N   /   ЛИЧНЫЙ ПОМОЩНИК" android:textColor="#FFC8D1" android:textSize="11sp" android:letterSpacing="0.1" android:gravity="center"/>
+<ImageView android:layout_width="154dp" android:layout_height="154dp" android:layout_marginTop="24dp" android:src="@drawable/avatar_spider" android:contentDescription="Белая эмблема паука на красном фоне"/>
+<TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="КАРЕН" android:textColor="#FFFFFF" android:textSize="38sp" android:textStyle="bold" android:letterSpacing="0.12"/>
+<TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Я рядом. Что будем делать?" android:textColor="#FFE4E9" android:textSize="16sp" android:layout_marginTop="4dp"/>
+<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/card_white" android:layout_marginTop="18dp">
+<TextView android:id="@+id/statusText" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="64dp" android:text="Нажмите микрофон или введите команду. Например: «громкость пятьдесят»" android:textColor="#501522" android:textSize="16sp" android:lineSpacingExtra="4dp"/>
+<Button android:id="@+id/voiceButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="52dp" android:layout_marginTop="6dp" android:backgroundTint="#C71932" android:textColor="#FFFFFF" android:text="●  ГОВОРИТЬ С КАРЕН"/>
+<EditText android:id="@+id/commandInput" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:hint="Введите команду…" android:textColor="#501522" android:textColorHint="#996D75" android:inputType="textCapSentences" android:maxLines="2"/>
+<Button android:id="@+id/sendButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="52dp" android:layout_marginTop="6dp" android:backgroundTint="#C71932" android:textColor="#FFFFFF" android:text="ВЫПОЛНИТЬ КОМАНДУ"/>
+</LinearLayout>
+<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/card_white" android:layout_marginTop="18dp">
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Управление телефоном" android:textColor="#501522" android:textSize="18sp" android:textStyle="bold" android:layout_marginTop="12dp"/>
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Громкость музыки" android:textColor="#501522" android:textSize="18sp" android:textStyle="bold" android:layout_marginTop="12dp"/>
+<SeekBar android:id="@+id/volumeSlider" android:layout_width="match_parent" android:layout_height="48dp" android:max="100" android:progressTint="#C71932" android:thumbTint="#C71932"/>
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Яркость экрана" android:textColor="#501522" android:textSize="18sp" android:textStyle="bold" android:layout_marginTop="12dp"/>
+<SeekBar android:id="@+id/brightnessSlider" android:layout_width="match_parent" android:layout_height="48dp" android:max="100" android:progressTint="#C71932" android:thumbTint="#C71932"/>
+<Button android:id="@+id/settingsButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="52dp" android:layout_marginTop="6dp" android:backgroundTint="#C71932" android:textColor="#FFFFFF" android:text="РАЗРЕШИТЬ ИЗМЕНЕНИЕ ЯРКОСТИ"/>
+<Button android:id="@+id/appsButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="52dp" android:layout_marginTop="6dp" android:backgroundTint="#C71932" android:textColor="#FFFFFF" android:text="ОТКРЫТЬ ПРИЛОЖЕНИЕ"/>
+<Button android:id="@+id/homeButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="52dp" android:layout_marginTop="6dp" android:backgroundTint="#C71932" android:textColor="#FFFFFF" android:text="СВЕРНУТЬ ПРИЛОЖЕНИЕ"/>
+<Button android:id="@+id/timeButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="52dp" android:layout_marginTop="6dp" android:backgroundTint="#C71932" android:textColor="#FFFFFF" android:text="СКОЛЬКО ВРЕМЕНИ?"/>
+<Button android:id="@+id/shotButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="52dp" android:layout_marginTop="6dp" android:backgroundTint="#C71932" android:textColor="#FFFFFF" android:text="СНИМОК ЭКРАНА"/>
+<Button android:id="@+id/recordButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="52dp" android:layout_marginTop="6dp" android:backgroundTint="#C71932" android:textColor="#FFFFFF" android:text="НАЧАТЬ ЗАПИСЬ ЭКРАНА"/>
+<Button android:id="@+id/stopRecordButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="52dp" android:layout_marginTop="6dp" android:backgroundTint="#C71932" android:textColor="#FFFFFF" android:text="ОСТАНОВИТЬ ЗАПИСЬ"/>
+</LinearLayout>
+<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="vertical" android:background="@drawable/card_white" android:layout_marginTop="18dp">
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Карен поверх приложений" android:textColor="#501522" android:textSize="18sp" android:textStyle="bold" android:layout_marginTop="12dp"/>
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="10dp" android:text="Касание красной кнопки включает и выключает микрофон. Перетаскивайте её, удерживайте для открытия Карен." android:textColor="#78505B" android:textSize="14sp"/>
+<Button android:id="@+id/overlayButton" android:layout_width="match_parent" android:layout_height="wrap_content" android:minHeight="52dp" android:layout_marginTop="6dp" android:backgroundTint="#C71932" android:textColor="#FFFFFF" android:text="ВКЛЮЧИТЬ ПЛАВАЮЩУЮ КНОПКУ"/>
+</LinearLayout>
+<TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:layout_marginBottom="18dp" android:gravity="center" android:text="Команды: «открой телеграм», «сделай тише», «яркость семьдесят». Для записи подтвердите запрос Android. «Закрой» сворачивает приложение на главный экран." android:textColor="#FFC8D1" android:textSize="12sp" android:lineSpacingExtra="4dp"/>
+</LinearLayout>
 </ScrollView>
+</FrameLayout>

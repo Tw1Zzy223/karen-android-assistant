@@ -1,81 +1,63 @@
 package com.karen.assistant
 
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.Service
+import android.app.*
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.graphics.PixelFormat
-import android.os.Build
 import android.os.IBinder
-import android.speech.RecognitionListener
-import android.speech.RecognizerIntent
-import android.speech.SpeechRecognizer
-import android.speech.tts.TextToSpeech
-import android.view.Gravity
-import android.view.MotionEvent
-import android.view.WindowManager
+import android.view.*
 import android.widget.ImageButton
 import android.widget.Toast
-import java.util.Locale
+import kotlin.math.abs
 
-class OverlayService : Service(), TextToSpeech.OnInitListener {
-    private lateinit var windowManager: WindowManager
+class OverlayService : Service() {
+    private lateinit var manager: WindowManager
     private lateinit var button: ImageButton
-    private var recognizer: SpeechRecognizer? = null
-    private lateinit var tts: TextToSpeech
-
+    private lateinit var voice: VoiceInput
     override fun onCreate() {
         super.onCreate()
-        tts = TextToSpeech(this, this)
-        createChannel()
-        val notification = android.app.Notification.Builder(this, CHANNEL)
-            .setSmallIcon(android.R.drawable.ic_btn_speak_now).setContentTitle("Карен активна")
-            .setContentText("Нажмите плавающую кнопку, чтобы говорить").build()
-        if (Build.VERSION.SDK_INT >= 29) startForeground(11, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE) else startForeground(11, notification)
-        showOverlay()
-    }
-
-    private fun showOverlay() {
-        windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("karen", "Карен", NotificationManager.IMPORTANCE_LOW))
+        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val stop = PendingIntent.getService(this, 1, Intent(this, OverlayService::class.java).setAction("stop"), PendingIntent.FLAG_IMMUTABLE)
+        val notification = Notification.Builder(this, "karen").setSmallIcon(android.R.drawable.ic_btn_speak_now)
+            .setContentTitle("Карен рядом").setContentText("Микрофон включается только по касанию")
+            .setContentIntent(open).addAction(android.R.drawable.ic_menu_close_clear_cancel, "Выключить", stop).build()
+        if (android.os.Build.VERSION.SDK_INT >= 30) startForeground(11, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+        else startForeground(11, notification)
+        manager = getSystemService(WindowManager::class.java)
         button = ImageButton(this).apply {
-            setImageResource(android.R.drawable.ic_btn_speak_now)
-            setBackgroundResource(com.karen.assistant.R.drawable.overlay_bg)
-            contentDescription = "Говорить с Карен"
-            setOnClickListener { listen() }
+            setImageResource(R.drawable.avatar_spider); setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            setPadding(0, 0, 0, 0); contentDescription = "Карен: включить или выключить микрофон"
+            setOnClickListener { voice.toggle() }
+            setOnLongClickListener { voice.cancel(); startActivity(Intent(this@OverlayService, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); true }
         }
-        val params = WindowManager.LayoutParams(72.dp, 72.dp,
-            if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.END; x = 18.dp; y = 180.dp }
-        var downX = 0; var downY = 0; var startX = 0; var startY = 0
+        voice = VoiceInput(this, { active, message ->
+            button.alpha = if (active) 0.6f else 1f
+            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+        }, { command ->
+            // Execute in a visible Activity so Android's background-launch rules are respected.
+            startActivity(Intent(this, MainActivity::class.java).setAction(MainActivity.ACTION_COMMAND)
+                .putExtra("command", command).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        })
+        val params = WindowManager.LayoutParams(64.dp, 64.dp, WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT).apply { gravity = Gravity.TOP or Gravity.LEFT; x = 16.dp; y = 180.dp }
+        var downX = 0f; var downY = 0f; var startX = 0; var startY = 0; var dragging = false
         button.setOnTouchListener { _, event ->
             when (event.action) {
-                MotionEvent.ACTION_DOWN -> { downX = event.rawX.toInt(); downY = event.rawY.toInt(); startX = params.x; startY = params.y; false }
-                MotionEvent.ACTION_MOVE -> { params.x = startX + (downX - event.rawX.toInt()); params.y = startY + (event.rawY.toInt() - downY); windowManager.updateViewLayout(button, params); true }
+                MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; startX = params.x; startY = params.y; dragging = false; false }
+                MotionEvent.ACTION_MOVE -> {
+                    if (abs(event.rawX - downX) + abs(event.rawY - downY) > 12.dp) dragging = true
+                    if (dragging) { params.x = startX + (event.rawX - downX).toInt(); params.y = startY + (event.rawY - downY).toInt(); manager.updateViewLayout(button, params) }
+                    dragging
+                }
+                MotionEvent.ACTION_UP -> dragging
                 else -> false
             }
         }
-        windowManager.addView(button, params)
+        manager.addView(button, params)
     }
-
-    private fun listen() {
-        if (!SpeechRecognizer.isRecognitionAvailable(this)) { say("Распознавание речи недоступно"); return }
-        recognizer?.destroy()
-        recognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
-            setRecognitionListener(object : RecognitionListener {
-                override fun onResults(results: android.os.Bundle) { results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()?.let { CommandEngine(this@OverlayService, ::say).run(it) } }
-                override fun onError(error: Int) { Toast.makeText(this@OverlayService, "Не удалось расслышать. Нажмите ещё раз.", Toast.LENGTH_SHORT).show() }
-                override fun onReadyForSpeech(p: android.os.Bundle?) = say("Слушаю")
-                override fun onBeginningOfSpeech() {} ; override fun onRmsChanged(v: Float) {} ; override fun onBufferReceived(b: ByteArray?) {} ; override fun onEndOfSpeech() {} ; override fun onPartialResults(p: android.os.Bundle?) {} ; override fun onEvent(t: Int, p: android.os.Bundle?) {}
-            })
-            startListening(Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).putExtra(RecognizerIntent.EXTRA_LANGUAGE, "ru-RU").putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM))
-        }
-    }
-    private fun say(text: String) { tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "karen") }
-    override fun onInit(status: Int) { if (status == TextToSpeech.SUCCESS) tts.language = Locale("ru", "RU") }
-    override fun onDestroy() { recognizer?.destroy(); tts.shutdown(); if (::button.isInitialized) windowManager.removeView(button); super.onDestroy() }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int { if (intent?.action == "stop") stopSelf(); return START_NOT_STICKY }
+    override fun onDestroy() { voice.destroy(); manager.removeView(button); super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
-    private fun createChannel() { if (Build.VERSION.SDK_INT >= 26) (getSystemService(NotificationManager::class.java)).createNotificationChannel(NotificationChannel(CHANNEL, "Карен", NotificationManager.IMPORTANCE_LOW)) }
     private val Int.dp get() = (this * resources.displayMetrics.density).toInt()
-    companion object { const val CHANNEL = "karen_overlay" }
 }
