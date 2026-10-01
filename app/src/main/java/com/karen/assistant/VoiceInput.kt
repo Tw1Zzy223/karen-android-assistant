@@ -23,7 +23,8 @@ class VoiceInput(private val context: Context, private val state: (Boolean, Stri
                 override fun onResults(results: Bundle) {
                     if (!listening) return
                     listening = false
-                    val phrase = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)?.firstOrNull()
+                    val alternatives = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
+                    val phrase = PhraseAliases.best(alternatives, CustomCommands(context).all())
                     if (phrase.isNullOrBlank()) state(false, "Не разобрала фразу. Попробуйте ещё раз")
                     else { state(false, "Вы: $phrase"); result(phrase) }
                 }

@@ -22,6 +22,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var captureAction = ACTION_SCREENSHOT
     private var pendingVoice = false
     private var overlayEnabled = false
+    private var lastQuestion = ""
     private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         if (pendingVoice && micGranted()) { pendingVoice = false; startVoice() }
         else if (pendingVoice) { pendingVoice = false; status.text = "Разрешите микрофон, чтобы говорить с Карен" }
@@ -56,6 +57,19 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             if (input.text.isNotBlank()) { execute(input.text.toString()); input.text.clear() }
         }
         findViewById<Button>(R.id.appsButton).setOnClickListener { chooseApp() }
+        val assistantSettings = AssistantSettings(this, tts)
+        findViewById<Button>(R.id.customButton).setOnClickListener { voice.cancel(); assistantSettings.commands() }
+        findViewById<Button>(R.id.voiceStyleButton).setOnClickListener { voice.cancel(); assistantSettings.voices() }
+        findViewById<Button>(R.id.scanButton).setOnClickListener { voice.cancel(); assistantSettings.allApps() }
+        findViewById<Button>(R.id.playButton).setOnClickListener {
+            val input = EditText(this).apply { hint = "Название приложения"; setTextColor(0xFF501522.toInt()) }
+            androidx.appcompat.app.AlertDialog.Builder(this).setTitle("Найти в Google Play").setView(input)
+                .setPositiveButton("Найти") { _, _ -> execute("скачай " + input.text.toString()) }.setNegativeButton("Назад", null).show()
+        }
+        findViewById<Button>(R.id.searchAnswerButton).setOnClickListener {
+            if (lastQuestion.isBlank()) { status.text = "Сначала произнесите вопрос или введите его"; return@setOnClickListener }
+            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://www.google.com/search?q=" + android.net.Uri.encode(lastQuestion))))
+        }
         findViewById<Button>(R.id.homeButton).setOnClickListener { execute("сверни приложение") }
         findViewById<Button>(R.id.timeButton).setOnClickListener { execute("сколько времени") }
         findViewById<Button>(R.id.shotButton).setOnClickListener { requestCapture(ACTION_SCREENSHOT) }
@@ -107,6 +121,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
     private fun execute(text: String) {
         voice.cancel()
+        lastQuestion = text
         status.text = "Вы: $text"
         CommandEngine(this) { message -> status.text = "Вы: $text\nКарен: $message"; say(message) }.run(text)
     }
@@ -123,7 +138,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); handleIntent(intent) }
     private fun say(text: String) { tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "karen") }
-    override fun onInit(result: Int) { if (result == TextToSpeech.SUCCESS) { tts.language = Locale("ru", "RU"); tts.setSpeechRate(1.02f) } }
+    override fun onInit(result: Int) { if (result == TextToSpeech.SUCCESS) VoiceStyle.apply(this, tts) }
     override fun onPause() { voice.cancel(); super.onPause() }
     override fun onDestroy() { voice.destroy(); tts.shutdown(); super.onDestroy() }
     companion object {
