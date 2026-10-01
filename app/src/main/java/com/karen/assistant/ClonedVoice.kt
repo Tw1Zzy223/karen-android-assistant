@@ -6,7 +6,6 @@ import android.os.Handler
 import android.os.Looper
 import java.io.File
 import java.util.UUID
-import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
 class ClonedVoice(private val context: Context) {
@@ -23,76 +22,54 @@ class ClonedVoice(private val context: Context) {
         try {
             file.outputStream().use { VoiceAudio.wav(it, samples) }
             val old = reference()
-            prefs.edit().putString("sample", file.name).putBoolean("enabled", false).commit()
-            // Keep at most the active reference; queued tasks snapshot samples under the manager lock.
+            check(prefs.edit().putString("sample", file.name).putBoolean("enabled", false).commit()) { "Не удалось сохранить настройки голоса" }
+            // Only the current reference is retained; the service reads it directly.
             old?.delete()
         } catch (e: Exception) { file.delete(); throw e }
     }
     fun clear() { stop(); enabled = false; reference()?.delete(); prefs.edit().remove("sample").apply() }
     fun speak(text: String, status: (String) -> Unit) {
         val ref = reference() ?: run { status("Сначала добавьте образец голоса"); return }
-        if (!CloneModels.ready(context)) { status("Сначала скачайте модель в «Голос из видео»"); return }
+        if (!CloneModels.ready(context)) { status("Дождитесь подготовки встроенной модели в «Голос из видео»"); return }
         val ticket = stop()
         status("Создаю речь голосом из видео… (локально)")
-        worker.execute {
-            if (generation.get() != ticket) return@execute
-            val engine: NativeClone
-            var handle = 0L
-            val wav = File(context.cacheDir, "clone-${UUID.randomUUID()}.wav")
-            val refCopy = File(context.cacheDir, "ref-${UUID.randomUUID()}.wav")
-            fun update(message: String) { main.post { if (generation.get() == ticket) status(message) } }
-            try {
-                ref.copyTo(refCopy)
-                engine = NativeClone()
-                synchronized(lock) {
-                    if (generation.get() != ticket) return@execute
-                    handle = engine.create(); native = engine; ptr = handle
-                }
-                update("Загружаю локальную модель голоса…")
-                engine.load(handle, CloneModels.directory(context).absolutePath.toByteArray(Charsets.UTF_8))
-                if (generation.get() != ticket) return@execute
-                val audio = engine.generate(handle, text.take(220).toByteArray(Charsets.UTF_8), refCopy.absolutePath.toByteArray(Charsets.UTF_8), NativeClone.Progress { tokens ->
-                    update("Создаю речь локально: $tokens аудиотокенов. Микрофон отменяет озвучку")
-                })
-                if (generation.get() != ticket) return@execute
-                wav.outputStream().use { VoiceAudio.wav(it, audio) }
-                main.post {
-                    if (generation.get() != ticket) { wav.delete(); return@post }
+        client = CloneServiceClient(context.applicationContext,
+            { if (generation.get() == ticket) status(it) },
+            { wav ->
+                    if (generation.get() != ticket) { wav.delete(); return@CloneServiceClient }
                     try {
                         val player = MediaPlayer()
                         playing = player; playingFile = wav
                         player.setDataSource(wav.absolutePath)
-                        player.setOnPreparedListener { if (generation.get() == ticket) { it.start(); status("Карен говорит голосом из видео") } }
+                        playbackDeadline.phase(10000, "Проигрыватель не открыл аудио за 10 секунд")
+                        player.setOnPreparedListener { if (generation.get() == ticket) {
+                            playbackDeadline.phase(35000, "Озвучка остановлена по таймауту")
+                            it.start(); status("Карен говорит голосом из видео")
+                        } }
                         player.setOnCompletionListener { if (playing === it) { releasePlayer(); status("Готово") } }
                         player.setOnErrorListener { p, _, _ -> if (playing === p) releasePlayer(); status("Не удалось воспроизвести голос"); true }
                         player.prepareAsync()
                     } catch (_: Exception) { releasePlayer(); wav.delete(); status("Не удалось воспроизвести голос") }
-                }
-            } catch (e: Exception) { wav.delete(); update("Не удалось создать речь: ${e.message?.take(160)}") }
-            catch (_: LinkageError) { update("Этот движок требует Android ARM64") }
-            finally {
-                synchronized(lock) {
-                    if (ptr == handle) { ptr = 0L; native = null }
-                    if (handle != 0L) NativeClone().free(handle)
-                }
-                refCopy.delete()
-            }
-        }
+            })
+        playbackStatus = status
+        client!!.start(text.take(220), ref.name)
     }
     companion object {
         private val main = Handler(Looper.getMainLooper())
-        private val worker = Executors.newSingleThreadExecutor()
-        private val lock = Any()
         private val generation = AtomicLong()
-        private var native: NativeClone? = null
-        private var ptr = 0L
+        private var client: CloneServiceClient? = null
         private var playing: MediaPlayer? = null
         private var playingFile: File? = null
-        private fun releasePlayer() { playing?.release(); playing = null; playingFile?.delete(); playingFile = null }
-        // All callers are on the main thread. Native cancellation is atomic, never frees a running context.
+        private var playbackStatus: ((String) -> Unit)? = null
+        private val playbackDeadline = PhaseDeadline(SpeechScheduler { delay, task ->
+            val runnable = Runnable { task() }; main.postDelayed(runnable, delay)
+            CancelTask { main.removeCallbacks(runnable) }
+        }) { message -> val callback = playbackStatus; releasePlayer(); callback?.invoke(message) }
+        private fun releasePlayer() { playbackDeadline.finish(); playing?.release(); playing = null; playingFile?.delete(); playingFile = null; playbackStatus = null }
+        // Cancels only the app's dedicated :voice process, never other apps or the UI.
         fun stop(): Long {
             val ticket = generation.incrementAndGet()
-            synchronized(lock) { if (ptr != 0L) native?.cancel(ptr) }
+            client?.stop(); client = null
             releasePlayer()
             return ticket
         }

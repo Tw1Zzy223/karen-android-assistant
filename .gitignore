@@ -4,5 +4,7 @@ local.properties
 build/
 app/build/
 app/.cxx/
+app/src/main/assets/models/*.gguf
+app/src/main/assets/models/*.download
 *.iml
 *.keystore

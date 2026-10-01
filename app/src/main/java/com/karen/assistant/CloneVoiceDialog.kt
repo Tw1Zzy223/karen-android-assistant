@@ -8,37 +8,38 @@ import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import java.util.concurrent.atomic.AtomicBoolean
 
-class CloneVoiceDialog(private val context: Context, private val status: (String) -> Unit, private val pick: () -> Unit) {
+class CloneVoiceDialog(private val context: Context, private val status: (String) -> Unit, private val pick: () -> Unit, private val gallery: () -> Unit) {
     private val voice = ClonedVoice(context.applicationContext)
     private val main = Handler(Looper.getMainLooper())
     private fun label(text: String) = TextView(context).apply { this.text = text; setTextColor(0xFF501522.toInt()); setPadding(12, 12, 12, 12) }
     fun show() {
         val column = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(20, 8, 20, 12) }
-        val state = label("Образец: ${if (voice.reference() != null) "добавлен" else "нет"}\nМодель: ${if (CloneModels.ready(context)) "готова" else "нужно скачать ~884 МБ"}\nКлонирование: ${if (voice.enabled) "включено" else "выключено"}")
-        column.addView(label("Карен создаёт новые фразы голосом из образца. Всё на телефоне, без API и отправки голоса на сервер. Скорость и сходство экспериментальные. После загрузки модель работает без интернета.\n\nTelegram: скачайте видео в чате → «Поделиться» → «Карен». Нужен сам файл; ссылки t.me не поддерживаются. Выберите 3–15 секунд одного говорящего без музыки."))
+        val state = label("Образец: ${if (voice.reference() != null) "добавлен" else "нет"}\nМодель: ${if (CloneModels.ready(context)) "готова" else "встроена в APK, нужна подготовка"}\nКлонирование: ${if (voice.enabled) "включено" else "выключено"}")
+        column.addView(label("Модель уже внутри APK. При первом запуске автоматически распаковывается и проверяется, интернет не нужен. Для распаковки нужен ещё ~1 ГБ свободной памяти.\n\n«Видео из галереи» открывает системную галерею видео. Telegram: скачайте видео → «Поделиться» → «Карен». Нужен сам файл, не ссылка t.me. Выберите 3–15 секунд одного говорящего без музыки.\n\nСинтез экспериментальный. Загрузка в память ограничена 90 секундами, создание речи — 120. «Стоп» завершает только процесс голоса, не приложение."))
         column.addView(state)
         val cancelled = AtomicBoolean(false)
         var downloading = false
         fun button(title: String, click: () -> Unit) { column.addView(Button(context).apply { text = title; setOnClickListener { click() } }) }
-        button("ВЫБРАТЬ ВИДЕО ИЛИ АУДИО") { if (!downloading) pick() }
-        button("СКАЧАТЬ МОДЕЛЬ (~884 МБ)") {
+        button("ВИДЕО ИЗ ГАЛЕРЕИ") { gallery() }
+        button("ВИДЕО ИЛИ АУДИО ИЗ ФАЙЛОВ") { pick() }
+        button("ПОДГОТОВИТЬ ВСТРОЕННУЮ МОДЕЛЬ") {
             if (downloading || CloneModels.ready(context)) return@button
-            cancelled.set(false); downloading = true; state.text = "Загрузка… Не закрывайте приложение"
+            cancelled.set(false); downloading = true; state.text = "Подготовка из APK… Интернет не используется"
             Thread({
                 try {
-                    CloneModels.download(context.applicationContext, cancelled) { percent -> main.post { state.text = "Загрузка модели: $percent%" } }
-                    main.post { downloading = false; state.text = "Модель скачана и проверена. Добавьте образец и включите голос" }
-                } catch (e: Exception) { main.post { downloading = false; state.text = "${e.message}. Скачанные целые файлы сохранены" } }
+                    CloneModels.prepare(context.applicationContext, cancelled) { percent -> main.post { state.text = "Подготовка модели из APK: $percent%" } }
+                    main.post { downloading = false; state.text = "Встроенная модель проверена и готова. Добавьте образец и включите голос" }
+                } catch (e: Exception) { main.post { downloading = false; state.text = "${e.message}. Готовые файлы сохранены" } }
             }, "karen-clone-model-download").start()
         }
         button("ВКЛЮЧИТЬ ГОЛОС ИЗ ОБРАЗЦА") {
-            if (voice.reference() == null || !CloneModels.ready(context)) { state.text = "Нужны образец голоса и скачанная модель"; return@button }
+            if (voice.reference() == null || !CloneModels.ready(context)) { state.text = "Нужны образец голоса и подготовленная встроенная модель"; return@button }
             voice.enabled = true; state.text = "Карен будет говорить новые ответы голосом из образца"
         }
         button("ПРОСЛУШАТЬ НОВУЮ ФРАЗУ") {
             voice.speak("Привет! Я Карен. Это новая фраза, созданная на телефоне голосом из вашего образца.") { state.text = it; status(it) }
         }
-        button("СТОП / ОТМЕНИТЬ ЗАГРУЗКУ") { cancelled.set(true); ClonedVoice.stop(); state.text = "Останавливаю. При загрузке ожидание сети может занять до 20 секунд" }
+        button("СТОП") { cancelled.set(true); ClonedVoice.stop(); state.text = "Озвучка остановлена. Подготовка остановится на следующем блоке файла" }
         button("ВЕРНУТЬ СИСТЕМНЫЙ ГОЛОС") { voice.enabled = false; ClonedVoice.stop(); state.text = "Клонирование выключено. Образец сохранён" }
         button("УДАЛИТЬ ОБРАЗЕЦ") { voice.clear(); state.text = "Образец удалён, клонирование выключено" }
         val scroll = ScrollView(context).apply { addView(column) }
@@ -64,7 +65,7 @@ class CloneVoiceDialog(private val context: Context, private val status: (String
                 try {
                     val samples = VideoVoiceImporter.decode(context.applicationContext, uri, offset, length)
                     voice.save(samples)
-                    main.post { status("Образец сохранён. Откройте «Голос из видео», скачайте модель и включите голос") }
+                    main.post { status("Образец сохранён. Откройте «Голос из видео» и включите голос после подготовки модели") }
                 } catch (e: Exception) { main.post { status("Не удалось извлечь голос: ${e.message?.take(180)}") } }
             }, "karen-video-voice-import").start()
             dialog.dismiss()

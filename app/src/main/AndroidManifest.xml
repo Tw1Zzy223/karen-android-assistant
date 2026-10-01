@@ -37,6 +37,10 @@
             </intent-filter>
         </activity>
         <service
+            android:name=".CloneSynthesisService"
+            android:exported="false"
+            android:process=":voice" />
+        <service
             android:name=".OverlayService"
             android:exported="false"
             android:foregroundServiceType="microphone" />

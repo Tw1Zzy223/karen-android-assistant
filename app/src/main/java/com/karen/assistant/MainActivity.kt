@@ -11,6 +11,7 @@ import android.provider.Settings
 import android.speech.tts.TextToSpeech
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import java.util.Locale
@@ -23,10 +24,14 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var pendingVoice = false
     private var overlayEnabled = false
     private var lastQuestion = ""
+    private val modelPreparationCancelled = java.util.concurrent.atomic.AtomicBoolean(false)
     private val silenceReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) { if (::tts.isInitialized) tts.stop(); AudioAnswers.stop(); ClonedVoice.stop() }
     }
     private val videoVoiceImport: androidx.activity.result.ActivityResultLauncher<Array<String>> = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) cloneDialog().import(uri)
+    }
+    private val galleryVideoImport: androidx.activity.result.ActivityResultLauncher<PickVisualMediaRequest> = registerForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) cloneDialog().import(uri)
     }
     private val audioImport = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -64,6 +69,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             view.setPadding(bars.left, bars.top, bars.right, bars.bottom); insets
         }
         status = findViewById(R.id.statusText)
+        prepareBundledModels()
         tts = TextToSpeech(this, this)
         ContextCompat.registerReceiver(this, silenceReceiver, android.content.IntentFilter(VoiceInput.CLAIM_MIC), ContextCompat.RECEIVER_NOT_EXPORTED)
         voice = VoiceInput(this, { active, message ->
@@ -182,7 +188,22 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         intent.action = null
     }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); handleIntent(intent) }
-    private fun cloneDialog(): CloneVoiceDialog = CloneVoiceDialog(this, { if (!isDestroyed) status.text = it }, { videoVoiceImport.launch(arrayOf("video/*", "audio/*")) })
+    private fun cloneDialog(): CloneVoiceDialog = CloneVoiceDialog(this, { if (!isDestroyed) status.text = it },
+        { videoVoiceImport.launch(arrayOf("video/*", "audio/*")) },
+        { galleryVideoImport.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.VideoOnly)) })
+    private fun prepareBundledModels() {
+        val info = findViewById<TextView>(R.id.modelStatusText)
+        if (CloneModels.ready(this)) { info.text = "Модель голоса встроена и готова. Интернет не нужен"; return }
+        info.text = "Подготавливаю встроенную модель… 0%"
+        Thread({
+            try {
+                CloneModels.prepare(applicationContext, modelPreparationCancelled) { percent -> runOnUiThread {
+                    if (!isDestroyed) info.text = "Подготавливаю встроенную модель… $percent%"
+                } }
+                runOnUiThread { if (!isDestroyed) info.text = "Модель голоса встроена и готова. Интернет не нужен" }
+            } catch (e: Exception) { runOnUiThread { if (!isDestroyed) info.text = "Подготовка модели: ${e.message}. Повторить можно в «Голос из видео»" } }
+        }, "karen-bundled-models").start()
+    }
     private fun say(text: String) {
         val cloned = ClonedVoice(applicationContext)
         if (cloned.enabled) { tts.stop(); cloned.speak(text) { if (!isDestroyed) status.text = "$text\n$it" } }
@@ -190,7 +211,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
     override fun onInit(result: Int) { if (result == TextToSpeech.SUCCESS) VoiceStyle.apply(this, tts) }
     override fun onPause() { voice.cancel(); super.onPause() }
-    override fun onDestroy() { voice.destroy(); unregisterReceiver(silenceReceiver); ClonedVoice.stop(); tts.shutdown(); super.onDestroy() }
+    override fun onDestroy() { modelPreparationCancelled.set(true); voice.destroy(); unregisterReceiver(silenceReceiver); ClonedVoice.stop(); tts.shutdown(); super.onDestroy() }
     companion object {
         const val ACTION_SCREENSHOT = "com.karen.assistant.SCREENSHOT"
         const val ACTION_RECORD = "com.karen.assistant.RECORD"

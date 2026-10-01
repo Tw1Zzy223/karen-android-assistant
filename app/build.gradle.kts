@@ -12,8 +12,8 @@ android {
         applicationId = "com.karen.assistant"
         minSdk = 29
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.5.0"
+        versionCode = 6
+        versionName = "0.6.0"
         ndk { abiFilters += "arm64-v8a" }
         externalNativeBuild { cmake {
             targets += "karen_voice"
@@ -27,7 +27,20 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
+    androidResources { noCompress += "gguf" }
 }
+
+val validateBundledModels by tasks.registering {
+    val modelDir = file("src/main/assets/models")
+    inputs.files(fileTree(modelDir) { include("*.gguf") })
+    doLast {
+        check(file("$modelDir/qwen-tokenizer-12hz-Q4_K_M.gguf").length() == 254974752L &&
+              file("$modelDir/qwen-talker-0.6b-base-Q4_K_M.gguf").length() == 628905056L) {
+            "Bundled voice models missing. Run tools/prepare-models.ps1 before building."
+        }
+    }
+}
+tasks.named("preBuild").configure { dependsOn(validateBundledModels) }
 
 kotlin { jvmToolchain(17) }
 

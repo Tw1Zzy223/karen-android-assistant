@@ -2,6 +2,7 @@
 #include <atomic>
 #include <chrono>
 #include <string>
+#include <cstdlib>
 #include "qwen3_tts.h"
 #include "qwen3_tts_c.h"
 
@@ -35,6 +36,8 @@ extern "C" JNIEXPORT void JNICALL
 Java_com_karen_assistant_NativeClone_load(JNIEnv* env, jobject, jlong ptr, jbyteArray directory) {
     try {
         auto* c = reinterpret_cast<VoiceContext*>(ptr);
+        // Streaming uses its own decoder. Don't also load the full batch decoder.
+        setenv("QWEN3_TTS_LOW_MEM", "1", 1);
         qwen3_tts_set_backend_preference(1); // CPU: MediaTek phone, no Qualcomm-only backend.
         qwen3_tts_set_cpu_threads(4);
         if (!c->engine.load_models(bytes(env, directory), "qwen-talker-0.6b-base-Q4_K_M.gguf"))

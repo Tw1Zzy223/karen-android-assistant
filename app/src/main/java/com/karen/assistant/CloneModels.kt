@@ -1,10 +1,8 @@
 package com.karen.assistant
 
 import android.content.Context
+import android.os.SystemClock
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
-import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 
 object CloneModels {
@@ -14,44 +12,33 @@ object CloneModels {
         Part("qwen-talker-0.6b-base-Q4_K_M.gguf", 628905056, "4b468ec7b1f62b90ef4ca316c0aa57deadfd54b2cf9651703ea753cedaf04226")
     )
     fun directory(context: Context) = File(context.filesDir, "clone_models").apply { mkdirs() }
-    fun ready(context: Context) = parts.all {
+    fun ready(context: Context): Boolean {
         val dir = directory(context)
-        File(dir, it.name).length() == it.size && File(dir, it.name + ".verified").isFile
+        return parts.all { part -> File(dir, part.name).length() == part.size &&
+            File(dir, part.name + ".verified").let { marker -> marker.isFile && marker.readText() == part.sha256 } }
     }
-    // Only fixed public model URLs; no voice sample is uploaded.
-    @Synchronized fun download(context: Context, cancelled: AtomicBoolean, progress: (Int) -> Unit) {
+    // No network. A native engine needs real files, so unpack bundled GGUF once.
+    @Synchronized fun prepare(context: Context, cancelled: AtomicBoolean, progress: (Int) -> Unit) {
         val dir = directory(context)
-        check(dir.usableSpace > parts.sumOf { it.size } + 100_000_000L) { "Освободите минимум 1 ГБ памяти" }
-        var completed = 0L
+        val missing = parts.filterNot { part -> File(dir, part.name).length() == part.size && File(dir, part.name + ".verified").let { f -> f.isFile && f.readText() == part.sha256 } }
+        if (missing.isEmpty()) { progress(100); return }
+        check(dir.usableSpace > missing.sumOf { it.size } + 100_000_000L) { "Для распаковки модели освободите ещё 1 ГБ памяти" }
+        val deadline = SystemClock.elapsedRealtime() + 180_000
+        var completed = parts.filterNot { it in missing }.sumOf { it.size }
         val total = parts.sumOf { it.size }
-        for (part in parts) {
-            check(!cancelled.get()) { "Загрузка отменена" }
+        for (part in missing) {
             val target = File(dir, part.name)
-            if (target.length() == part.size && File(dir, part.name + ".verified").isFile) { completed += part.size; continue }
             val temporary = File(dir, part.name + ".partial")
-            val connection = URL("https://huggingface.co/Serveurperso/Qwen3-TTS-GGUF/resolve/main/${part.name}").openConnection() as HttpURLConnection
-            connection.connectTimeout = 20000; connection.readTimeout = 20000
-            val digest = MessageDigest.getInstance("SHA-256")
             try {
-                check(connection.responseCode == 200) { "Ошибка загрузки HTTP ${connection.responseCode}" }
-                var count = 0L
-                var last = -1
-                connection.inputStream.use { input -> temporary.outputStream().use { output ->
-                    val buffer = ByteArray(65536)
-                    while (true) {
-                        check(!cancelled.get()) { "Загрузка отменена" }
-                        val n = input.read(buffer); if (n < 0) break
-                        count += n; check(count <= part.size) { "Размер модели изменился" }
-                        output.write(buffer, 0, n); digest.update(buffer, 0, n)
-                        val percent = ((completed + count) * 100 / total).toInt()
-                        if (percent != last) { progress(percent); last = percent }
-                    }
+                context.assets.open("models/${part.name}").use { input -> temporary.outputStream().use { output ->
+                    ModelBundleCopy.copy(input, output, part.size, part.sha256,
+                        { cancelled.get() || SystemClock.elapsedRealtime() > deadline },
+                        { bytes -> progress(((completed + bytes) * 100 / total).toInt()) })
                 } }
-                check(count == part.size && digest.digest().joinToString("") { "%02x".format(it) } == part.sha256) { "Проверка модели не прошла. Повторите загрузку" }
-                check(temporary.renameTo(target)) { "Не удалось сохранить модель" }
+                check(temporary.renameTo(target)) { "Не удалось сохранить встроенную модель" }
                 File(dir, part.name + ".verified").writeText(part.sha256)
                 completed += part.size
-            } finally { connection.disconnect(); temporary.delete() }
+            } finally { temporary.delete() }
         }
         progress(100)
     }
