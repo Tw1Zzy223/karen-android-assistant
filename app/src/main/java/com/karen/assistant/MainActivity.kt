@@ -24,7 +24,10 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var overlayEnabled = false
     private var lastQuestion = ""
     private val silenceReceiver = object : android.content.BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) { if (::tts.isInitialized) tts.stop(); AudioAnswers.stop() }
+        override fun onReceive(context: Context?, intent: Intent?) { if (::tts.isInitialized) tts.stop(); AudioAnswers.stop(); ClonedVoice.stop() }
+    }
+    private val videoVoiceImport: androidx.activity.result.ActivityResultLauncher<Array<String>> = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) cloneDialog().import(uri)
     }
     private val audioImport = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
@@ -84,7 +87,8 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             if (!micGranted()) { requestMic(); status.text = "Разрешите микрофон и нажмите «Только мой голос» ещё раз"; return@setOnClickListener }
             OwnerVoiceDialog(this).show()
         }
-        findViewById<Button>(R.id.importVoiceButton).setOnClickListener { voice.cancel(); tts.stop(); audioImport.launch(arrayOf("audio/*")) }
+        findViewById<Button>(R.id.importVoiceButton).setOnClickListener { voice.cancel(); tts.stop(); ClonedVoice.stop(); cloneDialog().show() }
+        findViewById<Button>(R.id.audioAnswerButton).setOnClickListener { voice.cancel(); tts.stop(); ClonedVoice.stop(); audioImport.launch(arrayOf("audio/*")) }
         findViewById<Button>(R.id.voiceStyleButton).setOnClickListener { voice.cancel(); assistantSettings.voices() }
         findViewById<Button>(R.id.scanButton).setOnClickListener { voice.cancel(); assistantSettings.allApps() }
         findViewById<Button>(R.id.playButton).setOnClickListener {
@@ -147,6 +151,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
     private fun execute(text: String) {
         voice.cancel()
+        ClonedVoice.stop(); AudioAnswers.stop()
         lastQuestion = text
         status.text = "Вы: $text"
         val customAction = CustomCommands(this).resolve(text)
@@ -164,16 +169,28 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     }
     private fun handleIntent(intent: Intent) {
         when (intent.action) {
+            Intent.ACTION_SEND -> {
+                voice.cancel(); tts.stop(); ClonedVoice.stop()
+                val uri = if (android.os.Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, android.net.Uri::class.java)
+                    else @Suppress("DEPRECATION") (intent.getParcelableExtra(Intent.EXTRA_STREAM) as? android.net.Uri)
+                if (uri?.scheme == "content") cloneDialog().import(uri)
+                else status.text = "Передайте само видео из Telegram через «Поделиться», не ссылку на сообщение"
+            }
             ACTION_SCREENSHOT, ACTION_RECORD -> requestCapture(intent.action!!)
             ACTION_COMMAND -> intent.getStringExtra("command")?.let { execute(it) }
         }
         intent.action = null
     }
     override fun onNewIntent(intent: Intent) { super.onNewIntent(intent); setIntent(intent); handleIntent(intent) }
-    private fun say(text: String) { tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "karen") }
+    private fun cloneDialog(): CloneVoiceDialog = CloneVoiceDialog(this, { if (!isDestroyed) status.text = it }, { videoVoiceImport.launch(arrayOf("video/*", "audio/*")) })
+    private fun say(text: String) {
+        val cloned = ClonedVoice(applicationContext)
+        if (cloned.enabled) { tts.stop(); cloned.speak(text) { if (!isDestroyed) status.text = "$text\n$it" } }
+        else { ClonedVoice.stop(); tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "karen") }
+    }
     override fun onInit(result: Int) { if (result == TextToSpeech.SUCCESS) VoiceStyle.apply(this, tts) }
     override fun onPause() { voice.cancel(); super.onPause() }
-    override fun onDestroy() { voice.destroy(); unregisterReceiver(silenceReceiver); tts.shutdown(); super.onDestroy() }
+    override fun onDestroy() { voice.destroy(); unregisterReceiver(silenceReceiver); ClonedVoice.stop(); tts.shutdown(); super.onDestroy() }
     companion object {
         const val ACTION_SCREENSHOT = "com.karen.assistant.SCREENSHOT"
         const val ACTION_RECORD = "com.karen.assistant.RECORD"

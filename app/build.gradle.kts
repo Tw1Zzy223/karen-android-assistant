@@ -6,19 +6,27 @@ plugins {
 android {
     namespace = "com.karen.assistant"
     compileSdk = 35
+    ndkVersion = "27.2.12479018"
 
     defaultConfig {
         applicationId = "com.karen.assistant"
         minSdk = 29
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.4.0"
+        versionCode = 5
+        versionName = "0.5.0"
+        ndk { abiFilters += "arm64-v8a" }
+        externalNativeBuild { cmake {
+            targets += "karen_voice"
+            arguments += listOf("-DANDROID_STL=c++_shared", "-DCMAKE_BUILD_TYPE=Release", "-DGGML_NATIVE=OFF", "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON")
+            cppFlags += "-O3"
+        } }
     }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
 }
 
 kotlin { jvmToolchain(17) }

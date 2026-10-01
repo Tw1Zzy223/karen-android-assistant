@@ -3,5 +3,6 @@
 local.properties
 build/
 app/build/
+app/.cxx/
 *.iml
 *.keystore
