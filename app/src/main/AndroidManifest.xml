@@ -18,7 +18,7 @@
         <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
     </queries>
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:label="Карен"
         android:icon="@drawable/avatar_spider"
         android:theme="@style/Theme.Karen"

@@ -29,7 +29,7 @@ class AssistantSettings(private val activity: AppCompatActivity, private val tts
         val layout = column()
         val phrase = field("Своя фраза, например «мне скучно»").apply { setText(oldPhrase) }
         val type = Spinner(activity)
-        val labels = arrayOf("Открыть приложение", "Громкость (%)", "Яркость (%)", "Главный экран", "Скриншот", "Запись экрана", "Остановить запись", "Назвать время", "Найти в Google Play", "Произнести мой ответ")
+        val labels = arrayOf("Открыть приложение", "Громкость (%)", "Яркость (%)", "Главный экран", "Скриншот", "Запись экрана", "Остановить запись", "Назвать время", "Найти в Google Play", "Произнести мой ответ", "Мой аудиоответ")
         type.adapter = ArrayAdapter(activity, android.R.layout.simple_spinner_dropdown_item, labels)
         val target = AutoCompleteTextView(activity).apply {
             hint = "Название, число или текст ответа"; setTextColor(0xFF501522.toInt()); threshold = 1
@@ -37,7 +37,9 @@ class AssistantSettings(private val activity: AppCompatActivity, private val tts
         }
         // Existing entries can also be edited as a canonical command.
         val canonical = field("Или готовая команда: «открой Telegram»").apply { setText(oldAction) }
-        layout.addView(phrase); layout.addView(type); layout.addView(target); layout.addView(canonical)
+        val audioEntries = AudioAnswers(activity).all().toList()
+        val audioChoices = Spinner(activity).apply { adapter = ArrayAdapter(activity, android.R.layout.simple_spinner_dropdown_item, audioEntries.map { it.second }.ifEmpty { listOf("Сначала импортируйте аудио") }) }
+        layout.addView(phrase); layout.addView(type); layout.addView(target); layout.addView(canonical); layout.addView(audioChoices)
         val dialog = AlertDialog.Builder(activity).setTitle("Своя команда").setView(layout).setPositiveButton("Сохранить", null).setNegativeButton("Отмена", null).create()
         dialog.setOnShowListener {
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
@@ -46,12 +48,13 @@ class AssistantSettings(private val activity: AppCompatActivity, private val tts
                     when (type.selectedItemPosition) {
                         0 -> "открой $value"; 1 -> "громкость $value"; 2 -> "яркость $value"; 3 -> "сверни приложение"
                         4 -> "сделай скриншот"; 5 -> "запиши экран"; 6 -> "останови запись"; 7 -> "сколько времени"
-                        8 -> "скачай $value"; else -> "ответ: $value"
+                        8 -> "скачай $value"; 9 -> "ответ: $value"; else -> "аудио:" + (audioEntries.getOrNull(audioChoices.selectedItemPosition)?.first ?: "")
                     }
                 }
                 if (phrase.text.isBlank()) { phrase.error = "Введите фразу"; return@setOnClickListener }
                 val parsed = IntentParser.parse(command)
-                if (parsed.kind in setOf(CommandKind.UNKNOWN, CommandKind.QUESTION) ||
+                val validAudio = command.startsWith("аудио:") && AudioAnswers(activity).all().containsKey(command.substringAfter(':'))
+                if ((!validAudio && parsed.kind in setOf(CommandKind.UNKNOWN, CommandKind.QUESTION)) ||
                     (parsed.kind in setOf(CommandKind.OPEN_APP, CommandKind.STORE, CommandKind.ANSWER) && parsed.argument.isBlank()) ||
                     (parsed.kind in setOf(CommandKind.VOLUME, CommandKind.BRIGHTNESS) && parsed.percent == null && parsed.delta == 0)) {
                     canonical.error = "Укажите приложение, число или понятную команду"; return@setOnClickListener

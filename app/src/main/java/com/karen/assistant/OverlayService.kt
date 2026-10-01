@@ -14,6 +14,7 @@ class OverlayService : Service() {
     private lateinit var manager: WindowManager
     private lateinit var button: ImageButton
     private lateinit var voice: VoiceInput
+    private var statusToast: Toast? = null
     override fun onCreate() {
         super.onCreate()
         getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel("karen", "Карен", NotificationManager.IMPORTANCE_LOW))
@@ -33,7 +34,8 @@ class OverlayService : Service() {
         }
         voice = VoiceInput(this, { active, message ->
             button.alpha = if (active) 0.6f else 1f
-            Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+            statusToast?.cancel()
+            statusToast = Toast.makeText(this, message, Toast.LENGTH_SHORT).also { it.show() }
         }, { command ->
             // Execute in a visible Activity so Android's background-launch rules are respected.
             startActivity(Intent(this, MainActivity::class.java).setAction(MainActivity.ACTION_COMMAND)
@@ -57,7 +59,7 @@ class OverlayService : Service() {
         manager.addView(button, params)
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int { if (intent?.action == "stop") stopSelf(); return START_NOT_STICKY }
-    override fun onDestroy() { voice.destroy(); manager.removeView(button); super.onDestroy() }
+    override fun onDestroy() { voice.destroy(); statusToast?.cancel(); manager.removeView(button); super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
     private val Int.dp get() = (this * resources.displayMetrics.density).toInt()
 }

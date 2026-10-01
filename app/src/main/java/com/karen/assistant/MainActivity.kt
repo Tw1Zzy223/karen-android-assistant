@@ -23,6 +23,25 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private var pendingVoice = false
     private var overlayEnabled = false
     private var lastQuestion = ""
+    private val silenceReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) { if (::tts.isInitialized) tts.stop(); AudioAnswers.stop() }
+    }
+    private val audioImport = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            val name = EditText(this).apply { hint = "Название голосового ответа"; setTextColor(0xFF501522.toInt()) }
+            androidx.appcompat.app.AlertDialog.Builder(this).setTitle("Добавить аудиоответ").setView(name)
+                .setPositiveButton("Импортировать") { _, _ ->
+                    val label = name.text.toString().trim().ifBlank { "Мой голос" }
+                    status.text = "Импортирую аудио…"
+                    Thread({
+                        try {
+                            AudioAnswers(this).import(uri, label)
+                            runOnUiThread { status.text = "Аудиоответ добавлен. Выберите его в «Мои команды» → «Мой аудиоответ»." }
+                        } catch (_: Exception) { runOnUiThread { status.text = "Не удалось импортировать аудио. Максимум 15 МБ." } }
+                    }, "karen-audio-import").start()
+                }.setNegativeButton("Отмена", null).show()
+        }
+    }
     private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         if (pendingVoice && micGranted()) { pendingVoice = false; startVoice() }
         else if (pendingVoice) { pendingVoice = false; status.text = "Разрешите микрофон, чтобы говорить с Карен" }
@@ -43,6 +62,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
         status = findViewById(R.id.statusText)
         tts = TextToSpeech(this, this)
+        ContextCompat.registerReceiver(this, silenceReceiver, android.content.IntentFilter(VoiceInput.CLAIM_MIC), ContextCompat.RECEIVER_NOT_EXPORTED)
         voice = VoiceInput(this, { active, message ->
             status.text = message
             findViewById<Button>(R.id.voiceButton).text = if (active) "■  ВЫКЛЮЧИТЬ МИКРОФОН" else "●  ГОВОРИТЬ С КАРЕН"
@@ -59,6 +79,12 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         findViewById<Button>(R.id.appsButton).setOnClickListener { chooseApp() }
         val assistantSettings = AssistantSettings(this, tts)
         findViewById<Button>(R.id.customButton).setOnClickListener { voice.cancel(); assistantSettings.commands() }
+        findViewById<Button>(R.id.ownerVoiceButton).setOnClickListener {
+            voice.cancel(); tts.stop(); AudioAnswers.stop()
+            if (!micGranted()) { requestMic(); status.text = "Разрешите микрофон и нажмите «Только мой голос» ещё раз"; return@setOnClickListener }
+            OwnerVoiceDialog(this).show()
+        }
+        findViewById<Button>(R.id.importVoiceButton).setOnClickListener { voice.cancel(); tts.stop(); audioImport.launch(arrayOf("audio/*")) }
         findViewById<Button>(R.id.voiceStyleButton).setOnClickListener { voice.cancel(); assistantSettings.voices() }
         findViewById<Button>(R.id.scanButton).setOnClickListener { voice.cancel(); assistantSettings.allApps() }
         findViewById<Button>(R.id.playButton).setOnClickListener {
@@ -123,6 +149,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         voice.cancel()
         lastQuestion = text
         status.text = "Вы: $text"
+        val customAction = CustomCommands(this).resolve(text)
+        if (customAction?.startsWith("аудио:") == true) {
+            tts.stop()
+            AudioAnswers(this).play(customAction.substringAfter(':')) { status.text = "Не удалось воспроизвести аудиоответ"; }
+            status.text = "Вы: $text\nКарен: аудиоответ"
+            return
+        }
         CommandEngine(this) { message -> status.text = "Вы: $text\nКарен: $message"; say(message) }.run(text)
     }
     private fun requestCapture(action: String) {
@@ -140,7 +173,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
     private fun say(text: String) { tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "karen") }
     override fun onInit(result: Int) { if (result == TextToSpeech.SUCCESS) VoiceStyle.apply(this, tts) }
     override fun onPause() { voice.cancel(); super.onPause() }
-    override fun onDestroy() { voice.destroy(); tts.shutdown(); super.onDestroy() }
+    override fun onDestroy() { voice.destroy(); unregisterReceiver(silenceReceiver); tts.shutdown(); super.onDestroy() }
     companion object {
         const val ACTION_SCREENSHOT = "com.karen.assistant.SCREENSHOT"
         const val ACTION_RECORD = "com.karen.assistant.RECORD"
